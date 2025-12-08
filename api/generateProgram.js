@@ -3,60 +3,62 @@ const GEMINI_URL =
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
-    res.statusCode = 405;
-    res.end('Method not allowed');
-    return;
+    return sendError(res, 405, 'Method not allowed');
   }
 
   try {
     const body = await getBody(req);
     const { profile, language } = body;
     if (!profile) {
-      res.statusCode = 400;
-      res.end('Profile is required');
-      return;
+      return sendError(res, 400, 'Profile is required');
     }
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      res.statusCode = 500;
-      res.end('Missing GEMINI_API_KEY');
-      return;
+      return sendError(res, 500, 'Missing GEMINI_API_KEY', 'Set GEMINI_API_KEY in the serverless environment');
     }
 
     const prompt = buildPrompt(profile, language);
 
-    const response = await fetch(`${GEMINI_URL}?key=${apiKey}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [
-          {
-            role: 'user',
-            parts: [{ text: prompt }],
+    let response;
+    try {
+      response = await fetch(`${GEMINI_URL}?key=${apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [
+            {
+              role: 'user',
+              parts: [{ text: prompt }],
+            },
+          ],
+          generationConfig: {
+            temperature: 0.7,
+            responseMimeType: 'application/json',
           },
-        ],
-        generationConfig: {
-          temperature: 0.7,
-          responseMimeType: 'application/json',
-        },
-      }),
-    });
+        }),
+      });
+    } catch (fetchError) {
+      console.error('Gemini fetch error', fetchError);
+      return sendError(res, 502, 'Failed to contact Gemini', fetchError.message);
+    }
 
     if (!response.ok) {
       const text = await response.text();
-      res.statusCode = 500;
-      res.end(text);
-      return;
+      console.error('Gemini responded with error', response.status, text);
+      return sendError(
+        res,
+        response.status >= 500 ? 502 : response.status,
+        'Gemini responded with an error',
+        text
+      );
     }
 
     const data = await response.json();
     const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
 
     if (!rawText) {
-      res.statusCode = 502;
-      res.end('No content returned from Gemini');
-      return;
+      return sendError(res, 502, 'No content returned from Gemini');
     }
 
     let parsed;
@@ -64,17 +66,15 @@ export default async function handler(req, res) {
       parsed = JSON.parse(rawText);
     } catch (parseError) {
       console.error('Gemini JSON parse error', parseError, rawText);
-      res.statusCode = 502;
-      res.end('Gemini returned invalid JSON');
-      return;
+      return sendError(res, 502, 'Gemini returned invalid JSON');
     }
+
     res.statusCode = 200;
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify(parsed));
   } catch (error) {
-    console.error(error);
-    res.statusCode = 500;
-    res.end('Failed to generate program');
+    console.error('Unhandled error in generateProgram', error);
+    sendError(res, 500, 'Failed to generate program');
   }
 }
 
@@ -112,4 +112,11 @@ function getBody(req) {
     });
     req.on('error', reject);
   });
+}
+
+function sendError(res, statusCode, message, detail) {
+  res.statusCode = statusCode;
+  res.setHeader('Content-Type', 'application/json');
+  const payload = detail ? { error: message, detail } : { error: message };
+  res.end(JSON.stringify(payload));
 }
