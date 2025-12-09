@@ -8,6 +8,24 @@ const STORAGE_KEYS = {
   program: 'mot3a_program',
 };
 
+const hasStorage = () => typeof window !== 'undefined' && typeof localStorage !== 'undefined';
+
+const readFromStorage = (key, fallback) => {
+  if (!hasStorage()) return fallback;
+  const stored = localStorage.getItem(key);
+  if (!stored) return fallback;
+  try {
+    return JSON.parse(stored);
+  } catch (error) {
+    console.warn(`Failed to parse stored value for ${key}`, error);
+    return fallback;
+  }
+};
+
+export function AppProvider({ children }) {
+  const [language, setLanguage] = useState(() => readFromStorage(STORAGE_KEYS.language, 'ar'));
+  const [profile, setProfile] = useState(() => readFromStorage(STORAGE_KEYS.profile, null));
+  const [program, setProgram] = useState(() => readFromStorage(STORAGE_KEYS.program, null));
 export function AppProvider({ children }) {
   const [language, setLanguage] = useState(() => localStorage.getItem(STORAGE_KEYS.language) || 'ar');
   const [profile, setProfile] = useState(() => {
@@ -22,6 +40,13 @@ export function AppProvider({ children }) {
   const [error, setError] = useState(null);
 
   useEffect(() => {
+    if (hasStorage()) {
+      localStorage.setItem(STORAGE_KEYS.language, language);
+    }
+  }, [language]);
+
+  useEffect(() => {
+    if (profile && hasStorage()) {
     localStorage.setItem(STORAGE_KEYS.language, language);
   }, [language]);
 
@@ -32,6 +57,7 @@ export function AppProvider({ children }) {
   }, [profile]);
 
   useEffect(() => {
+    if (program && hasStorage()) {
     if (program) {
       localStorage.setItem(STORAGE_KEYS.program, JSON.stringify(program));
     }

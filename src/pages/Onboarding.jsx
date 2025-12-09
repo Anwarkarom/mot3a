@@ -46,6 +46,7 @@ export default function Onboarding() {
       navigate('/dashboard');
     } catch (err) {
       console.error(err);
+      setError(err.message || 'Failed to generate program. Please try again.');
       setError(err.message);
     } finally {
       setLoading(false);

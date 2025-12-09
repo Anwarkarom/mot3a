@@ -3,6 +3,7 @@ const GEMINI_URL =
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
+    return sendError(res, 405, 'Method not allowed');
     res.statusCode = 405;
     res.end('Method not allowed');
     return;
@@ -12,6 +13,7 @@ export default async function handler(req, res) {
     const body = await getBody(req);
     const { profile, language } = body;
     if (!profile) {
+      return sendError(res, 400, 'Profile is required');
       res.statusCode = 400;
       res.end('Profile is required');
       return;
@@ -19,6 +21,7 @@ export default async function handler(req, res) {
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
+      return sendError(res, 500, 'Missing GEMINI_API_KEY', 'Set GEMINI_API_KEY in the serverless environment');
       res.statusCode = 500;
       res.end('Missing GEMINI_API_KEY');
       return;
@@ -26,6 +29,38 @@ export default async function handler(req, res) {
 
     const prompt = buildPrompt(profile, language);
 
+    let response;
+    try {
+      response = await fetch(`${GEMINI_URL}?key=${apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [
+            {
+              role: 'user',
+              parts: [{ text: prompt }],
+            },
+          ],
+          generationConfig: {
+            temperature: 0.7,
+            responseMimeType: 'application/json',
+          },
+        }),
+      });
+    } catch (fetchError) {
+      console.error('Gemini fetch error', fetchError);
+      return sendError(res, 502, 'Failed to contact Gemini', fetchError.message);
+    }
+
+    if (!response.ok) {
+      const text = await response.text();
+      console.error('Gemini responded with error', response.status, text);
+      return sendError(
+        res,
+        response.status >= 500 ? 502 : response.status,
+        'Gemini responded with an error',
+        text
+      );
     const response = await fetch(`${GEMINI_URL}?key=${apiKey}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -52,11 +87,26 @@ export default async function handler(req, res) {
 
     const data = await response.json();
     const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+
+    if (!rawText) {
+      return sendError(res, 502, 'No content returned from Gemini');
+    }
+
+    let parsed;
+    try {
+      parsed = JSON.parse(rawText);
+    } catch (parseError) {
+      console.error('Gemini JSON parse error', parseError, rawText);
+      return sendError(res, 502, 'Gemini returned invalid JSON');
+    }
+
     const parsed = JSON.parse(rawText);
     res.statusCode = 200;
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify(parsed));
   } catch (error) {
+    console.error('Unhandled error in generateProgram', error);
+    sendError(res, 500, 'Failed to generate program');
     console.error(error);
     res.statusCode = 500;
     res.end('Failed to generate program');
@@ -97,4 +147,11 @@ function getBody(req) {
     });
     req.on('error', reject);
   });
+}
+
+function sendError(res, statusCode, message, detail) {
+  res.statusCode = statusCode;
+  res.setHeader('Content-Type', 'application/json');
+  const payload = detail ? { error: message, detail } : { error: message };
+  res.end(JSON.stringify(payload));
 }
