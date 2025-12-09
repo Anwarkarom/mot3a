@@ -29,4 +29,17 @@ export async function generateProgram(payload) {
   } catch (parseError) {
     throw new Error('Received invalid data from AI service');
   }
+  const response = await fetch(`${API_BASE}/api/generateProgram`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(errText || 'Failed to reach AI service');
+  }
+
+  const data = await response.json();
+  return data;
 }

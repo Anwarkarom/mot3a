@@ -4,6 +4,9 @@ const GEMINI_URL =
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return sendError(res, 405, 'Method not allowed');
+    res.statusCode = 405;
+    res.end('Method not allowed');
+    return;
   }
 
   try {
@@ -11,11 +14,17 @@ export default async function handler(req, res) {
     const { profile, language } = body;
     if (!profile) {
       return sendError(res, 400, 'Profile is required');
+      res.statusCode = 400;
+      res.end('Profile is required');
+      return;
     }
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
       return sendError(res, 500, 'Missing GEMINI_API_KEY', 'Set GEMINI_API_KEY in the serverless environment');
+      res.statusCode = 500;
+      res.end('Missing GEMINI_API_KEY');
+      return;
     }
 
     const prompt = buildPrompt(profile, language);
@@ -52,6 +61,28 @@ export default async function handler(req, res) {
         'Gemini responded with an error',
         text
       );
+    const response = await fetch(`${GEMINI_URL}?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [
+          {
+            role: 'user',
+            parts: [{ text: prompt }],
+          },
+        ],
+        generationConfig: {
+          temperature: 0.7,
+          responseMimeType: 'application/json',
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      res.statusCode = 500;
+      res.end(text);
+      return;
     }
 
     const data = await response.json();
@@ -69,12 +100,16 @@ export default async function handler(req, res) {
       return sendError(res, 502, 'Gemini returned invalid JSON');
     }
 
+    const parsed = JSON.parse(rawText);
     res.statusCode = 200;
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify(parsed));
   } catch (error) {
     console.error('Unhandled error in generateProgram', error);
     sendError(res, 500, 'Failed to generate program');
+    console.error(error);
+    res.statusCode = 500;
+    res.end('Failed to generate program');
   }
 }
 

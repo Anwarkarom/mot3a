@@ -26,6 +26,16 @@ export function AppProvider({ children }) {
   const [language, setLanguage] = useState(() => readFromStorage(STORAGE_KEYS.language, 'ar'));
   const [profile, setProfile] = useState(() => readFromStorage(STORAGE_KEYS.profile, null));
   const [program, setProgram] = useState(() => readFromStorage(STORAGE_KEYS.program, null));
+export function AppProvider({ children }) {
+  const [language, setLanguage] = useState(() => localStorage.getItem(STORAGE_KEYS.language) || 'ar');
+  const [profile, setProfile] = useState(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.profile);
+    return saved ? JSON.parse(saved) : null;
+  });
+  const [program, setProgram] = useState(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.program);
+    return saved ? JSON.parse(saved) : null;
+  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -37,12 +47,18 @@ export function AppProvider({ children }) {
 
   useEffect(() => {
     if (profile && hasStorage()) {
+    localStorage.setItem(STORAGE_KEYS.language, language);
+  }, [language]);
+
+  useEffect(() => {
+    if (profile) {
       localStorage.setItem(STORAGE_KEYS.profile, JSON.stringify(profile));
     }
   }, [profile]);
 
   useEffect(() => {
     if (program && hasStorage()) {
+    if (program) {
       localStorage.setItem(STORAGE_KEYS.program, JSON.stringify(program));
     }
   }, [program]);
